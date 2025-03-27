@@ -15,6 +15,7 @@
             src = ./.;
             idrisLibraries = [ idris2Api ];
             ipkgName = "idris2-lua";
+            version = idris2Api.version;
             postInstall = ''
               wrapProgram "$out/bin/idris2-lua" \
                 --suffix IDRIS2_PACKAGE_PATH ':' ${idris2}/${idris2.name}
