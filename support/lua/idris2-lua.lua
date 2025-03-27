@@ -4,13 +4,7 @@
 --idris.luaVersion {51,52,53,54}         --set automatically by the compiler
 --idris.noRequire  {true,false}
 
-if not idris.noRequire then
-   idrisn = require("idris2-lua_native")
-   utf8 = require("lua-utf8")
-   bigint = require("bigint")
-   lfs = require("lfs")
-   vstruct = require("vstruct")
-end
+bigint = require("bigint")
 
 idris.error = error
 idris.print = print
@@ -25,6 +19,48 @@ setmetatable(idris.W, {__tostring=function(_) return "%MkWorld" end})
                                            --as well as the level of optimisations applied
                                            --5.4 is probably out of reach yet, as not all required libraries are updated
                                            --if ever will be
+
+function idris.lt(lhs, rhs)
+  if type(lhs) == "table" then
+    return bigint.compare(lhs, rhs, "<")
+  else
+    return lhs < rhs
+  end
+end
+
+function idris.gt(lhs, rhs)
+  if type(lhs) == "table" then
+    return bigint.compare(lhs, rhs, ">")
+  else
+    return lhs > rhs
+  end
+end
+
+
+function idris.lte(lhs, rhs)
+  if type(lhs) == "table" then
+    return bigint.compare(lhs, rhs, "<=")
+  else
+    return lhs <= rhs
+  end
+end
+
+function idris.gte(lhs, rhs)
+  if type(lhs) == "table" then
+    return bigint.compare(lhs, rhs, ">=")
+  else
+    return lhs >= rhs
+  end
+end
+
+function idris.eq(lhs, rhs)
+  if type(lhs) == "table" then
+    return bigint.compare(lhs, rhs, "==")
+  else
+    return lhs == rhs
+  end
+end
+
 
 function idris.addenv(key)
   return function(val)
@@ -969,48 +1005,7 @@ end
 
 --TODO uname may not work correctly if ulimit -Sn <num> is not set to higher number ...
 function idris.getOS()
-   local raw_os_name
-   local env_OS = os.getenv('OS')
-   if env_OS then
-      raw_os_name = env_OS
-   else
-      -- LuaJIT shortcut
-      if jit and jit.os then
-         raw_os_name = jit.os
-      else
-         -- is popen supported?
-         local popen_status, popen_result = pcall(io.popen, "")
-         if popen_status then
-            if popen_result then popen_result:close() end
-            -- Unix-based OS
-            raw_os_name = io.popen('uname -s'):read(idris.readl)
-         end
-      end
-     end
-   if not raw_os_name then raw_os_name = "unknown" end
-   raw_os_name = raw_os_name:lower()
-
-   local os_patterns = {
-      ['windows'] = 'windows',
-      ['linux'] = 'linux',
-      ['mac'] = 'mac',
-      ['darwin'] = 'darwin',
-      ['^mingw'] = 'windows',
-      ['^cygwin'] = 'windows',
-      ['bsd$'] = 'bsd',
-      ['SunOS'] = 'solaris',
-   }
-
-
-   local os_name = 'unknown'
-
-   for pattern, name in pairs(os_patterns) do
-      if raw_os_name:match(pattern) then
-         os_name = name
-         break
-      end
-   end
-   return os_name
+  return "unknown"
 end
 
 idris["System.Info.prim__os"] = idris.getOS()

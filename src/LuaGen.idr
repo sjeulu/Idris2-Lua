@@ -295,7 +295,7 @@ mutual
   stringify _ LFalse = ["false"]
   stringify _ LTrue = ["true"]
   stringify _ (LNumber num) = [num]
-  stringify _ (LBigInt num) = ["bigint:new(" , "\"" , num , "\"" , ")" ]
+  stringify _ (LBigInt num) = ["bigint.new(" , "\"" , num , "\"" , ")" ]
   stringify _ (LString s) = [stringifyString s]
   stringify _ (LComment s) = ["--[[ ",  s, " --]]"]
   stringify _ (LTable []) = ["{}"]
@@ -383,17 +383,17 @@ mutual
   stringify n (LPrimFn op@(BAnd _) args)   = stringifyBitOp n op args (copts |> luaVersion |> get)
   stringify n (LPrimFn op@(BOr _) args)    = stringifyBitOp n op args (copts |> luaVersion |> get)
   stringify n (LPrimFn op@(BXOr _) args)   = stringifyBitOp n op args (copts |> luaVersion |> get)
-  stringify n (LPrimFn (LT ty) [x, y]) = stringifyBinOp (S n) "<" x y
-  stringify n (LPrimFn (LTE ty) [x, y]) = stringifyBinOp (S n) "<=" x y
-  stringify n (LPrimFn (EQ ty) [x, y]) = stringifyBinOp (S n) "==" x y
-  stringify n (LPrimFn (GTE ty) [x, y]) = stringifyBinOp (S n) ">=" x y
-  stringify n (LPrimFn (GT ty) [x, y]) = stringifyBinOp (S n) ">" x y
-  stringify n (LPrimFn StrLength [x]) = ["utf8.len(" , stringify (1 + n) x , ")"]
-  stringify n (LPrimFn StrHead [x]) = ["utf8.sub(" , stringify (1 + n) x , ", 1, 1)"]
-  stringify n (LPrimFn StrTail [x]) = ["utf8.sub(" , stringify (1 + n) x , ", 2)"]
+  stringify n (LPrimFn (LT ty) [x, y]) = stringifyFnApp n "idris.lt" [x, y]
+  stringify n (LPrimFn (LTE ty) [x, y]) = stringifyFnApp n "idris.lte" [x, y]
+  stringify n (LPrimFn (EQ ty) [x, y]) = stringifyFnApp n "idris.eq" [x, y]
+  stringify n (LPrimFn (GTE ty) [x, y]) = stringifyFnApp n "idris.gte" [x, y]
+  stringify n (LPrimFn (GT ty) [x, y]) = stringifyFnApp n "idris.gt" [x, y]
+  stringify n (LPrimFn StrLength [x]) = ["string.len(" , stringify (1 + n) x , ")"]
+  stringify n (LPrimFn StrHead [x]) = ["string.sub(" , stringify (1 + n) x , ", 1, 1)"]
+  stringify n (LPrimFn StrTail [x]) = ["string.sub(" , stringify (1 + n) x , ", 2)"]
   stringify n (LPrimFn StrIndex [str, i]) =
       let strI = stringify (1 + n) i in
-         [ "utf8.sub("
+         [ "string.sub("
          , stringify (1 + n) str
          , ", "
          , strI
@@ -414,7 +414,7 @@ mutual
   stringify n (LPrimFn StrReverse [x]) = ["(" , stringify (1 + n) x , "):reverse()"]
   stringify n (LPrimFn StrSubstr [offset, len, str]) =
      let strOff = stringify (1 + n) offset in
-        ["utf8.sub("
+        ["string.sub("
         , stringify (1 + n) str
         , ", "
         , strOff
@@ -439,26 +439,26 @@ mutual
 
   stringify n (LPrimFn (Cast StringType IntType) [x]) = stringifyFnApp n "idris.strtointeger" [x] --defined in support
   stringify n (LPrimFn (Cast StringType DoubleType) [x]) = stringifyFnApp n "tonumber" [x]
-  stringify n (LPrimFn (Cast StringType IntegerType) [x]) = stringifyFnApp n "bigint:new" [x]
+  stringify n (LPrimFn (Cast StringType IntegerType) [x]) = stringifyFnApp n "bigint.new" [x]
 
 
-  stringify n (LPrimFn (Cast IntType CharType) [x]) = ["utf8.char(" , stringify (1 + n) x , ")"]
+  stringify n (LPrimFn (Cast IntType CharType) [x]) = ["string.char(" , stringify (1 + n) x , ")"]
   stringify n (LPrimFn (Cast IntType DoubleType) [x]) = stringify n x
-  stringify n (LPrimFn (Cast IntType IntegerType) [x]) = stringifyFnApp n "bigint:new" [x]
+  stringify n (LPrimFn (Cast IntType IntegerType) [x]) = stringifyFnApp n "bigint.new" [x]
 
 
-  stringify n (LPrimFn (Cast CharType IntegerType) [x]) = ["bigint:new(utf8.byte(" , stringify (1 + n) x , "))"]
-  stringify n (LPrimFn (Cast CharType IntType) [x]) = ["utf8.byte(" , stringify (1 + n) x , ")"]
+  stringify n (LPrimFn (Cast CharType IntegerType) [x]) = ["bigint.new(string.byte(" , stringify (1 + n) x , "))"]
+  stringify n (LPrimFn (Cast CharType IntType) [x]) = ["string.byte(" , stringify (1 + n) x , ")"]
 
 
   stringify n (LPrimFn (Cast IntegerType DoubleType) [x]) = stringifyFnApp n "bigint.tonumber" [x]
   stringify n (LPrimFn (Cast IntegerType IntType) [x]) = stringifyFnApp n "bigint.tonumber" [x]
-  stringify n (LPrimFn (Cast IntegerType StringType) [x]) = stringifyFnApp n "bigint.tostring" [x]
+  stringify n (LPrimFn (Cast IntegerType StringType) [x]) = stringifyFnApp n "(function(x) return bigint.unserialize(x, \"string\", 10) end)" [x]
 
 
   stringify n (LPrimFn (Cast DoubleType IntType) [x]) = stringifyFnApp n "math.floor" [x]
   stringify n (LPrimFn (Cast DoubleType IntegerType) [x]) =
-    ["bigint:new(math.floor(" , stringify (1 + n) x , "))" ]
+    ["bigint.new(math.floor(" , stringify (1 + n) x , "))" ]
 
 
   stringify n (LPrimFn (Cast ty StringType) [x]) = stringifyFnApp n "tostring" [x]
@@ -607,7 +607,15 @@ processConstant (Str x) = pure $ LString x
 processConstant (Ch x) = pure $ LString (String.singleton x)
 processConstant (Db x) = pure $ LNumber (show x)
 processConstant WorldVal = pure $ LString (show WorldVal)
-processConstant c = throw $ InternalError ("Unsupported constant '" ++ (show c) ++ "' detected")
+processConstant (I8 x) = pure $ LNumber (show x)
+processConstant (I16 x) = pure $ LNumber (show x)
+processConstant (I32 x) = pure $ LNumber (show x)
+processConstant (I64 x) = pure $ LNumber (show x)
+processConstant (B8 x) = pure $ LNumber (show x)
+processConstant (B16 x) = pure $ LNumber (show x)
+processConstant (B32 x) = pure $ LNumber (show x)
+processConstant (B64 x) = pure $ LNumber (show x)
+processConstant c = throw $ InternalError "Unsupported constant \{show c} detected"
 
 justReturn : LuaExpr -> LuaBlock
 justReturn expr = (LDoNothing, expr)
