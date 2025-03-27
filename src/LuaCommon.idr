@@ -14,7 +14,7 @@ import Data.String
 import Data.Vect
 import Data.Zippable
 
-import Libraries.Utils.Hex
+import Protocol.Hex
 
 infixl 100 |>
 

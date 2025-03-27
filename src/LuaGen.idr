@@ -6,7 +6,9 @@ import Compiler.CompileExpr
 import Core.Context
 import Core.Directory
 
-import Libraries.Utils.Hex
+import Idris.Syntax
+
+import Protocol.Hex
 import Libraries.Utils.Path
 
 import Idris.Driver
@@ -30,6 +32,9 @@ import System.File
 import LuaCommon
 import OrderDefs
 import LuaAst
+
+%hide Libraries.Data.PosMap.infixl.(|>)
+%hide Core.Normalise.Eval.Stack
 
 
 data Stack : Type where
@@ -87,7 +92,7 @@ logLine str with (opts |> debugOutput |> get)
    logLine str | False = pure ()
 
 export
-toMillis : Clock type -> Integer
+toMillis : Clock t -> Integer
 toMillis (MkClock sec nan) =
    let scale = 1000 in
        scale * sec + (nan `div` 1000000)
@@ -364,7 +369,7 @@ mutual
   stringify n (LPrimFn (Add ty) [x, y]) = stringifyBinOp n "+" x y
   stringify n (LPrimFn (Sub ty) [x, y]) = stringifyBinOp n "-" x y
   stringify n (LPrimFn (Mul ty) [x, y]) = stringifyBinOp n "*" x y
-  stringify n (LPrimFn (Div IntType) [x, y]) with (copts |> luaVersion |> get >= Lua53)
+  stringify n (LPrimFn (Div IntType) [x, y]) with ((copts |> luaVersion |> get) >= Lua53)
      stringify n (LPrimFn (Div IntType) [x, y]) | True
        = stringifyBinOp n "//" x y
      stringify n (LPrimFn (Div IntType) [x, y]) | False
@@ -511,8 +516,8 @@ pushFrame =
     s <- get Stack
     let frame = nextFrame s
     let index = nextIndex s
-    put Stack (record{ nextFrame $= (+1)
-                     , nextIndex = indexLowest
+    put Stack ({ nextFrame $= (+1)
+                     , nextIndex := indexLowest
                      , stack $= (index ::) } s)
     pure (MkStackFrame frame)
 
@@ -524,7 +529,7 @@ pushLocal =
   do
     s <- get Stack
     let i = nextIndex s
-    put Stack (record{nextIndex $= (+1)} s)
+    put Stack ({nextIndex $= (+1)} s)
     pure (LIndex (LLVar (frameName frame)) (LNumber (show i)))
 
 ||| Returns the number of local variables in the popped frame
@@ -536,7 +541,7 @@ popFrame =
      let v = nextIndex s
      case (i <= frameLowest, stack s) of
           (False, (nextIndex :: other)) => do
-             put Stack (record{nextFrame $= (\i => i - 1), nextIndex = nextIndex, stack = other} s)
+             put Stack ({nextFrame $= (\i => i - 1), nextIndex := nextIndex, stack := other} s)
              pure (v - 1)
           (_, _) => throw (UserError "Attempt to pop from an empty stack")
 
@@ -549,7 +554,7 @@ popName =
      if i <= indexLowest then
            throw (UserError "attempt to pop from an empty stack frame")
         else
-           put Stack (record{nextIndex $= (\i => i - 1)} s)
+           put Stack ({nextIndex $= (\i => i - 1)} s)
 
 
 getPreamble :
@@ -582,7 +587,7 @@ addDefToPreamble name def okIfDefined = do
                pure ()
 
 
-constantTy : Constant -> Maybe Constant
+constantTy : Constant -> Maybe PrimType
 constantTy (I _)   = Just IntType
 constantTy (BI _)  = Just IntegerType
 constantTy (B8 _)  = Just Bits8Type
@@ -1310,7 +1315,7 @@ translate defs term = do
   clock0 <- coreLift $ clockTime Monotonic
 
   logLine "Lua compilation started [0/5]"
-  logLine ("Using " ++ opts |> luaVersion |> get |> show)
+  logLine ("Using " ++ (opts |> luaVersion |> get |> show))
   cdata <- getCompileData False Cases term
 
   clock1 <- coreLift $ clockTime Monotonic
@@ -1413,7 +1418,7 @@ build defs outputDir term file = do
   strbuf <- translate defs term
   let luaFile = file ++ ".lua"
   Right () <- coreLift $ writeBufferToFile (outputDir </> luaFile) strbuf.get strbuf.offset
-   | Left err => throw $ FileErr (outputDir </> luaFile) err
+   | Left (err, _) => throw $ FileErr (outputDir </> luaFile) err
 
   luaExe <- coreLift getLuaExe
 
@@ -1426,15 +1431,16 @@ build defs outputDir term file = do
   pure (outputDir </> file)
 
 compile : Ref Ctxt Defs
+       -> Ref Syn SyntaxInfo
        -> String
        -> String
        -> ClosedTerm
        -> String
        -> Core (Maybe String)
-compile defs tmpDir outputDir term file = Just <$> build defs outputDir term file
+compile defs _ tmpDir outputDir term file = Just <$> build defs outputDir term file
 
-execute : Ref Ctxt Defs -> String -> ClosedTerm -> Core ()
-execute defs tmpDir term = do
+execute : Ref Ctxt Defs -> Ref Syn SyntaxInfo -> String -> ClosedTerm -> Core ()
+execute defs _ tmpDir term = do
   exe <- build defs tmpDir term "generated"
   coreLift_ $ fflush stdout
   coreLift_ $ system $ "'" ++ exe ++ "' "
